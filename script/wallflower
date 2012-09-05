@@ -1,0 +1,173 @@
+#!perl
+use strict;
+use warnings;
+use Getopt::Long;
+use Pod::Usage;
+use Config;
+
+use Plack::Util ();
+use App::Wallflower;
+
+my %option;
+
+# command-line parameters
+GetOptions( \%option, 'application=s', 'include|I=s', 'destination=s',
+    'index=s', 'environment=s', 'quiet', 'help', 'manual' )
+    or pod2usage( -verbose => 1 );
+
+# simple on-line help
+pod2usage( -verbose => 1 ) if $option{help};
+pod2usage( -verbose => 2 ) if $option{manual};
+
+# add include dirs to @INC
+my $path_sep = $Config::Config{path_sep} || ';';
+unshift @INC, split /\Q$path_sep\E/, $option{include}
+    if defined $option{include};
+
+# setup the Plack environment
+$ENV{PLACK_ENV} = $option{environment} || 'deployment';
+
+# Wallflower hits the stage
+my $wf = App::Wallflower->new(
+    application => Plack::Util::load_psgi( $option{application} ),
+    ( destination => $option{destination} )x!! $option{destination},
+    ( index       => $option{index}       )x!! $option{index},
+);
+
+# I'm just hanging on to my friend's purse
+while (<>) {
+
+    # ignore blank lines and comments
+    next if /^\s*(#|$)/;
+    chomp;
+
+    # get the response
+    my $response = $wf->get( my $url = $_ );
+
+    if ( !$option{quiet} ) {
+        my ( $status, $file ) = @{$response}[ 0, 2 ];
+        print "$status $url", $file && ( " => $file [", -s $file, ']' ), "\n";
+    }
+}
+
+__END__
+
+=head1 NAME
+
+wallflower - Sorry I can't dance, I'm hanging on to my friend's purse
+
+=head1 SYNOPSIS
+
+ wallflower [options]
+
+=head1 OPTIONS
+
+ --application <name>       Name of the .psgi application file
+ --destination <path>       Destination directory for the static files
+
+ --include     <path>       Library paths to include
+ --environment <name>       Plack environment (default: deployment)
+ --index       <filename>   Default name for index file (default: index.html)
+ --quiet                    Do not show progress
+
+ --help                     Print a short online help and exit
+ --manual                   Print the full manual page and exit
+
+=head1 DESCRIPTION
+
+B<wallflower> turns your L<Plack> application into a static web site.
+
+While not suitable for all applications, there are a number of use cases
+where this makes sense. Most web sites are in essence static. Without a
+way for users to update information on the site (via forms, comments, etc)
+the only changes in the web site come from sources that you control
+(including the database) and that are accessible in your development
+environment.
+
+Using a web framework like L<Dancer> (or any other) for a static web
+site actually makes a lot of sense, just because it gives you access
+to all the features of the framework for that site. Think of it as
+I<extreme caching>.
+
+So, forms could be processed on your development server
+(e.g. to update a local database), and the pages to be I<published>
+would be a I<subset> of all the URL that the application supports.
+
+Turning such an application into a real static site (a set of pages
+to upload to a static web server) is just a matter of generating all
+possible URL for the static site and saving them to files.
+
+B<wallflower> does exactly that. It reads a list of URL, strips them
+from their query strings, turn them into C<GET> requests and saves the
+response body to a file whose name matches the request pathinfo.
+
+B<wallflower> is not a generic offline browsing tool.
+
+=head1 EXAMPLE
+
+The web site created by C<dancer -a mywebapp> is the perfect example.
+
+The complete list of URL needed to view the site is:
+
+    /
+    /404.html
+    /500.html
+    /css/error.css
+    /css/style.css
+    /favicon.ico
+    /images/perldancer-bg.jpg
+    /images/perldancer.jpg
+    /javascripts/jquery.js
+
+Passing this list to B<wallflower> gives the following result:
+
+    $ wallflower -a bin/app.pl -d /tmp urls.txt
+    200 / => /tmp/output/index.html [5367]
+    200 /404.html => /tmp/output/404.html [499]
+    200 /500.html => /tmp/output/500.html [510]
+    200 /css/error.css => /tmp/output/css/error.css [1210]
+    200 /css/style.css => /tmp/output/css/style.css [2850]
+    404 /favicon.ico
+    404 /images/perldancer-bg.jpg
+    404 /images/perldancer.jpg
+    200 /javascripts/jquery.js => /tmp/output/javascripts/jquery.js [248235]
+
+Note that URL with a path ending with a C</> or a name without an extension
+will be considered to be a directory, and have the default I<index> filename
+appended.
+
+Any URL resulting in a status different than C<200> will be logged,
+but not saved.
+
+=head1 AUTHOR
+
+Philippe Bruhat (BooK)
+
+=head1 ACKNOWLEDGEMENTS
+
+L<wallflower> started as a neat idea in a discussion between Marc
+Chantreux, Alexis Sukrieh, Franck Cuny and myself in the hallway of
+OSDC.fr (L<http://osdc.fr/>) 2010, after Alexis' talk about L<Dancer>.
+
+Because a good pun should never be wasted, a first version of the
+program has been included in L<Dancer> since version 1.3000_01.
+
+The idea for L<App::Wallflower> owes a lot to Vincent Pit who, while
+I was talking about L<wallflower> and L<Dancer> with Marc on IRC in
+January 2011, noted that this file generation generation scheme had
+nothing to do with L<Dancer> and much more with L<Plack>.
+
+L<wallflower> treats all L<Plack> applications equally, even if the
+first version of the program was targetting L<Dancer> only.
+
+=head1 COPYRIGHT
+
+Copyright 2010-2012 Philippe Bruhat (BooK), all rights reserved.
+
+=head1 LICENSE
+
+This program is free software and is published under the same
+terms as Perl itself.
+
+=cut
+
