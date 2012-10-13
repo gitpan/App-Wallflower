@@ -3,133 +3,127 @@ package App::Wallflower;
 use strict;
 use warnings;
 
+use Getopt::Long qw( GetOptionsFromArray );
+use Pod::Usage;
 use Plack::Util ();
-use Path::Class;
-use URI;
-use Carp;
+use Wallflower;
+use Wallflower::Util qw( links_from );
 
-our $VERSION = '1.000';
+sub new_with_options {
+    my ( $class, $args ) = @_;
+    my $input = (caller)[1];
 
-# quick accessors
-for my $attr (qw( application destination env index )) {
-    no strict 'refs';
-    *$attr = sub { $_[0]{$attr} };
-}
+    # save previous configuration
+    my $save = Getopt::Long::Configure();
 
-# create a new instance
-sub new {
-    my ( $class, %args ) = @_;
-    my $self = bless {
-        destination => Path::Class::Dir->new(),    # File::Spec->curdir
-        env         => {},
-        index       => 'index.html',
-        %args,
+    # ensure we use Getopt::Long's default configuration
+    Getopt::Long::ConfigDefaults();
+
+    # get the command-line options (modifies $args)
+    my %option = ( follow => 1, environment => 'deployment' );
+    GetOptionsFromArray(
+        $args,           \%option,
+        'application=s', 'destination|directory=s',
+        'index=s',       'environment=s',
+        'follow!',       'filter|files|F',
+        'quiet',         'include|INC=s@',
+        'help',          'manual',
+    ) or pod2usage(
+        -input   => $input,
+        -verbose => 1,
+        -exitval => 2,
+    );
+
+    # restore Getopt::Long configuration
+    Getopt::Long::Configure($save);
+
+    # simple on-line help
+    pod2usage( -verbose => 1 ) if $option{help};
+    pod2usage( -verbose => 2 ) if $option{manual};
+
+    # application is required
+    pod2usage(
+        -input   => $input,
+        -verbose => 1,
+        -exitval => 2,
+        -message => 'Missing required option: application'
+    ) if !exists $option{application};
+
+    # include option
+    my $path_sep = $Config::Config{path_sep} || ';';
+    $option{inc} = [ split /\Q$path_sep\E/, join $path_sep,
+        @{ $option{include} || [] } ];
+
+    local $ENV{PLACK_ENV} = $option{environment};
+    local @INC = ( @INC, @{ $option{inc} } );
+    return bless {
+        option     => \%option,
+        args       => $args,
+        seen       => {},
+        wallflower => Wallflower->new(
+            application => Plack::Util::load_psgi( $option{application} ),
+            ( destination => $option{destination} )x!! $option{destination},
+            ( index       => $option{index}       )x!! $option{index},
+        ),
     }, $class;
 
-    # some basic parameter checking
-    croak "application is required" if !defined $self->application;
-    croak "destination is invalid"
-        if !-e $self->destination || !-d $self->destination;
-
-    return $self;
 }
 
-# url -> file converter
-sub target {
-    my ( $self, $uri ) = @_;
-
-    # absolute paths have the empty string as their first path_segment
-    my ( undef, @segments ) = $uri->path_segments;
-
-    # assume directory if the last segment has no extension
-    push @segments, $self->index if $segments[-1] !~ /\./;
-
-    # generate target file name
-    return Path::Class::File->new( $self->destination, @segments );
+sub run {
+    my ($self) = @_;
+    ( my $args, $self->{args} ) = ( $self->{args}, [] );
+    my $method = $self->{option}{filter} ? '_process_args' : '_process_queue';
+    $self->$method(@$args);
 }
 
-# save the URL to a file
-sub get {
-    my ( $self, $uri ) = @_;
-    my ( $status, $headers, $file, $content ) = ( 500, [], '', '' );
+sub _process_args {
+    my $self = shift;
+    local @ARGV = @_;
+    while (<>) {
 
-    $uri = URI->new($uri) if !ref $uri;
+        # ignore blank lines and comments
+        next if /^\s*(#|$)/;
+        chomp;
 
-    # require an absolute path
-    return [ $status, $headers, $file ] if $uri->path !~ /^\//;
-
-    # setup the environment
-    my $env = {
-
-        # current environment
-        %ENV,
-
-        # overridable defaults
-        'psgi.errors' => \*STDERR,
-
-        # current instance defaults
-        %{ $self->env },
-
-        # request-related environment variables
-        REQUEST_METHOD => 'GET',
-
-        # TODO properly deal with SCRIPT_NAME and PATH_INFO with mounts
-        SCRIPT_NAME     => '',
-        PATH_INFO       => $uri->path,
-        REQUEST_URI     => $uri->path,
-        QUERY_STRING    => '',
-        SERVER_NAME     => 'localhost',
-        SERVER_PORT     => '80',
-        SERVER_PROTOCOL => "HTTP/1.0",
-
-        # wallflower defaults
-        'psgi.streaming' => '',
-    };
-
-    # get the content
-    my $res = Plack::Util::run_app( $self->application, $env );
-
-    if ( ref $res eq 'ARRAY' ) {
-        ( $status, $headers, $content ) = @$res;
+        $self->_process_queue("$_");
     }
-    elsif ( ref $res eq 'CODE' ) {
-        die "Delayed response and streaming not supported yet";
+}
+
+sub _process_queue {
+    my ( $self, @queue ) = @_;
+    my ( $quiet, $follow, $seen )
+        = @{ $self->{option} }{qw( quiet follow seen )};
+    my $wallflower = $self->{wallflower};
+
+    # I'm just hanging on to my friend's purse
+    local $ENV{PLACK_ENV} = $self->{option}{environment};
+    local @INC = ( @INC, @{ $self->{option}{inc} } );
+    @queue = ('/') if !@queue;
+    while (@queue) {
+
+        my $url = URI->new( shift @queue );
+        next if $seen->{ $url->path }++;
+
+        # get the response
+        my $response = $wallflower->get($url);
+        my ( $status, $headers, $file ) = @$response;
+
+        # tell the world
+        printf "$status %s%s\n", $url->path, $file && " => $file [${\-s $file}]"
+            if !$quiet;
+
+        # obtain links to resources
+        if ( $status eq '200' && $follow ) {
+            push @queue, links_from( $response => $url );
+        }
+
+        # follow 301 Moved Permanently
+        elsif ( $status eq '301' ) {
+            require HTTP::Headers;
+            my $l = HTTP::Headers->new(@$headers)->header('Location');
+            unshift @queue, $l if $l;
+        }
     }
-    else { die "Unknown response from application: $res"; }
-
-    # save the content to a file
-    if ( $status eq '200' ) {
-
-        # get a file to save the content in
-        my $dir = ( $file = $self->target($uri) )->dir;
-        $dir->mkpath if !-e $dir;
-        open my $fh, '>', $file or die "Can't open $file for writing: $!";
-
-        # copy content to the file
-        if ( ref $content eq 'ARRAY' ) {
-            print $fh @$content;
-        }
-        elsif ( ref $content eq 'GLOB' ) {
-            local $/ = \8192;
-            print {$fh} $_ while <$content>;
-            close $content;
-        }
-        elsif ( eval { $content->can('getline') } ) {
-            local $/ = \8192;
-            while ( defined( my $line = $content->getline ) ) {
-                print {$fh} $line;
-            }
-            $content->close;
-        }
-        else {
-            die "Don't know how to handle body: $content";
-        }
-
-        # finish
-        close $fh;
-    }
-
-    return [ $status, $headers, $file ];
 }
 
 1;
@@ -142,71 +136,31 @@ App::Wallflower - Class performing the moves for the wallflower program
 
 =head1 SYNOPSIS
 
+    # this is the actual code for wallflower
     use App::Wallflower;
-
-    my $w = App::Wallflower->new(
-        application => $app, # a PSGI app
-        destination => $dir, # target directory
-    );
-
-    # dump all URL from $app to files in $dir
-    $w->get( $_ ) for @urls;
+    App::Wallflower->new_with_options( \@ARGV )->run;
 
 =head1 DESCRIPTION
 
-This module contains the core functionality of the L<wallflower> program,
-that provides user-friendly functionality.
+L<App::Wallflower> is a container for functions for the L<wallflower>
+program.
 
 =head1 METHODS
 
-=head2 new( %args )
+=head2 new_with_options( \@argv )
 
-Create a new L<App::Wallflower> object.
+Process options in the provided array reference (modifying it),
+and return a object ready to be C<run()>.
 
-The parameters are:
+See L<wallflower> for the list of options and their usage.
 
-=over 4
+=head2 run( )
 
-=item C<application>
+Make L<wallflower> dance.
 
-The PSGI/Plack application, as a CODE reference.
-
-This parameter is I<required>.
-
-=item C<destination>
-
-The destination directory. By default, will use the current directory.
-
-=item C<env>
-
-Additional environment key/value pairs.
-
-=item C<index>
-
-The default file name for URL ending with a C</>.
-The default value is F<index.html>.
-
-=back
-
-
-=head2 get( $url )
-
-Perform a C<GET> request for C<$url> through the application, and
-in case of success, save the result to a file, whose name is obtained
-via the C<target()> method.
-
-C<$url> may be either a string or a L<URI> object, representing an
-absolute URL (the path starts with a C</>). The scheme, host and port
-elements are optional. The query string will be ignored.
-
-=head2 target( $uri )
-
-Note that target assumes C<$uri> is a L<URI> object.
-
-=head1 ACCESSORS
-
-Accessors (that are both getters and setters) exist for all parameters
-to C<new()> and bear the same name.
+Process the remaining arguments according to the options,
+i.e. either consider them as URL to save, or as files
+containing URL to save.
 
 =head1 AUTHOR
 

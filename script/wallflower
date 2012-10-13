@@ -1,56 +1,14 @@
 #!perl
 use strict;
 use warnings;
-use Getopt::Long;
-use Pod::Usage;
-use Config;
-
-use Plack::Util ();
 use App::Wallflower;
 
-my %option;
-
-# command-line parameters
-GetOptions( \%option, 'application=s', 'include|I=s', 'destination=s',
-    'index=s', 'environment=s', 'quiet', 'help', 'manual' )
-    or pod2usage( -verbose => 1 );
-
-# simple on-line help
-pod2usage( -verbose => 1 ) if $option{help};
-pod2usage( -verbose => 2 ) if $option{manual};
-
-# add include dirs to @INC
-my $path_sep = $Config::Config{path_sep} || ';';
-unshift @INC, split /\Q$path_sep\E/, $option{include}
-    if defined $option{include};
-
-# setup the Plack environment
-$ENV{PLACK_ENV} = $option{environment} || 'deployment';
-
-# Wallflower hits the stage
-my $wf = App::Wallflower->new(
-    application => Plack::Util::load_psgi( $option{application} ),
-    ( destination => $option{destination} )x!! $option{destination},
-    ( index       => $option{index}       )x!! $option{index},
-);
-
-# I'm just hanging on to my friend's purse
-while (<>) {
-
-    # ignore blank lines and comments
-    next if /^\s*(#|$)/;
-    chomp;
-
-    # get the response
-    my $response = $wf->get( my $url = $_ );
-
-    if ( !$option{quiet} ) {
-        my ( $status, $file ) = @{$response}[ 0, 2 ];
-        print "$status $url", $file && ( " => $file [", -s $file, ']' ), "\n";
-    }
-}
+App::Wallflower->new_with_options( \@ARGV )->run;
 
 __END__
+
+=for MakeMaker
+App::Wallflower - Sorry I can't dance, I'm hanging on to my friend's purse
 
 =head1 NAME
 
@@ -62,13 +20,15 @@ wallflower - Sorry I can't dance, I'm hanging on to my friend's purse
 
 =head1 OPTIONS
 
- --application <name>       Name of the .psgi application file
+ --application <app>        Name of the .psgi application file
  --destination <path>       Destination directory for the static files
 
- --include     <path>       Library paths to include
  --environment <name>       Plack environment (default: deployment)
  --index       <filename>   Default name for index file (default: index.html)
+ --no-follow                Do not follow links in HTML and CSS pages
+ --filter                   Consider arguments as files containing URL
  --quiet                    Do not show progress
+ --include     <path>       Library paths to include
 
  --help                     Print a short online help and exit
  --manual                   Print the full manual page and exit
@@ -103,6 +63,86 @@ response body to a file whose name matches the request pathinfo.
 
 B<wallflower> is not a generic offline browsing tool.
 
+=head2 COMMAND-LINE OPTIONS
+
+In typical L<Getopt::Long> fashion, all options can be shortened,
+so long as the shortened version is unambiguous.
+
+=over 4
+
+=item *
+
+B<--application> I<application>
+
+The path to the Plack application to run.
+This option is required.
+
+=item *
+
+B<--destination> I<path>, B<--directory> I<path>
+
+The directory where files will be saved.
+This option is required, and the directory must exist.
+
+=item *
+
+B<--environment> I<name>
+
+Define the Plack environment to run the application in.
+The default environment is C<deployment>.
+
+=item *
+
+B<--index> I<filename>
+
+The default name for index files when fetching a URL ending with a C</>.
+The default is F<index.html>.
+
+=item *
+
+B<--no-follow>, B<--follow>
+
+Disables or enables following links in HTML, XHTML, and CSS pages.
+The default option is to follow links.
+
+=item *
+
+B<--filter>, B<--files>
+
+Behave as a filter: all remaining arguments on the command-line are
+considered as files containing URL to process (one per line).
+If no arguments are provided, will read from standard input.
+
+The normal behaviour (without B<--filter>) is to consider the remaining
+arguments as a list of URL. If no arguments are provided, assume the
+only URL is C</>.
+
+=item *
+
+B<--quiet>
+
+Hide all output.
+
+=item *
+
+B<--include> <path>, B<-INC> <path>
+
+Library paths to include. This option can be repeated.
+
+=item *
+
+B<--help>
+
+Print a short online help and exit.
+
+=item *
+
+B<--manual>
+
+Print the full manual page and exit.
+
+=back
+
 =head1 EXAMPLE
 
 The web site created by C<dancer -a mywebapp> is the perfect example.
@@ -121,7 +161,7 @@ The complete list of URL needed to view the site is:
 
 Passing this list to B<wallflower> gives the following result:
 
-    $ wallflower -a bin/app.pl -d /tmp urls.txt
+    $ wallflower -a bin/app.pl -d /tmp -f urls.txt
     200 / => /tmp/output/index.html [5367]
     200 /404.html => /tmp/output/404.html [499]
     200 /500.html => /tmp/output/500.html [510]
@@ -139,6 +179,11 @@ appended.
 Any URL resulting in a status different than C<200> will be logged,
 but not saved.
 
+Only the path section is used to fetch the response, which means that URL
+that pointing to other sites will likely result in C<404> (or point to
+a page that exist in the application, and therefore fetch the I<local>
+response).
+
 =head1 AUTHOR
 
 Philippe Bruhat (BooK)
@@ -151,10 +196,12 @@ OSDC.fr (L<http://osdc.fr/>) 2010, after Alexis' talk about L<Dancer>.
 
 Because a good pun should never be wasted, a first version of the
 program has been included in L<Dancer> since version 1.3000_01.
+Since it wasn't maintained, it has been removed in version 1.3110,
+after the first release of L<App::Wallflower>.
 
 The idea for L<App::Wallflower> owes a lot to Vincent Pit who, while
 I was talking about L<wallflower> and L<Dancer> with Marc on IRC in
-January 2011, noted that this file generation generation scheme had
+January 2011, noted that this file generation scheme had
 nothing to do with L<Dancer> and much more with L<Plack>.
 
 L<wallflower> treats all L<Plack> applications equally, even if the

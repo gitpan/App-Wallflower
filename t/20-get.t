@@ -4,7 +4,7 @@ use Test::More;
 use File::Temp qw( tempdir );
 use List::Util qw( sum );
 use URI;
-use App::Wallflower;
+use Wallflower;
 
 # setup test data
 my @tests;
@@ -35,11 +35,14 @@ push @tests, [
         'index.htm',
         'Hello, World!'
     ],
-    [ 'wrong' => 500, [], '', '' ],
     [   '/klonk/' => 200,
         [ 'Content-Type' => 'text/plain', 'Content-Length' => 13 ],
         File::Spec->catfile( 'klonk', 'index.html' ),
         'Hello, World!'
+    ],
+    [   '/clunk' => 200,
+        [ 'Content-Type' => 'text/plain', 'Content-Length' => 13 ],
+        'clunk', 'Hello, World!'
     ],
 ];
 
@@ -102,7 +105,7 @@ push @tests, [
     },
     [   "/200" => 200,
         [ 'Content-Type' => 'text/plain', 'Content-Length' => 3 ],
-        File::Spec->catfile( 200, 'index.html' ), 200
+        '200', '200'
     ],
     [   "/403" => 403,
         [ 'Content-Type' => 'text/plain', 'Content-Length' => 3 ],
@@ -114,12 +117,22 @@ push @tests, [
     ],
 ];
 
+push @tests,
+    [
+    'app that dies',
+    tempdir( CLEANUP => 1 ),
+    sub {die},
+    [   '/' => 500,
+        [ 'Content-Type' => 'text/plain', 'Content-Length' => 21 ], '', ''
+    ],
+    ];
+
 plan tests => sum map 2 * ( @$_ - 3 ), @tests;
 
 for my $t (@tests) {
     my ( $desc, $dir, $app, @urls ) = @$t;
 
-    my $wf = App::Wallflower->new(
+    my $wf = Wallflower->new(
         application => $app,
         destination => $dir,
     );
