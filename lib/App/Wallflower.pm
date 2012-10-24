@@ -20,14 +20,20 @@ sub new_with_options {
     Getopt::Long::ConfigDefaults();
 
     # get the command-line options (modifies $args)
-    my %option = ( follow => 1, environment => 'deployment' );
+    my %option = (
+        follow      => 1,
+        environment => 'deployment',
+        host        => ['localhost']
+    );
     GetOptionsFromArray(
         $args,           \%option,
         'application=s', 'destination|directory=s',
         'index=s',       'environment=s',
         'follow!',       'filter|files|F',
         'quiet',         'include|INC=s@',
+        'host=s@',
         'help',          'manual',
+        'tutorial',
     ) or pod2usage(
         -input   => $input,
         -verbose => 1,
@@ -38,8 +44,15 @@ sub new_with_options {
     Getopt::Long::Configure($save);
 
     # simple on-line help
-    pod2usage( -verbose => 1 ) if $option{help};
-    pod2usage( -verbose => 2 ) if $option{manual};
+    pod2usage( -verbose => 1, -input => $input ) if $option{help};
+    pod2usage( -verbose => 2, -input => $input ) if $option{manual};
+    pod2usage(
+        -verbose => 2,
+        -input   => do {
+            require Pod::Find;
+            Pod::Find::pod_where( { -inc => 1 }, 'Wallflower::Tutorial' );
+        },
+    ) if $option{tutorial};
 
     # application is required
     pod2usage(
@@ -55,7 +68,7 @@ sub new_with_options {
         @{ $option{include} || [] } ];
 
     local $ENV{PLACK_ENV} = $option{environment};
-    local @INC = ( @INC, @{ $option{inc} } );
+    local @INC = ( @{ $option{inc} }, @INC );
     return bless {
         option     => \%option,
         args       => $args,
@@ -94,15 +107,17 @@ sub _process_queue {
     my ( $quiet, $follow, $seen )
         = @{ $self->{option} }{qw( quiet follow seen )};
     my $wallflower = $self->{wallflower};
+    my $host_ok    = $self->_host_regexp;
 
     # I'm just hanging on to my friend's purse
     local $ENV{PLACK_ENV} = $self->{option}{environment};
-    local @INC = ( @INC, @{ $self->{option}{inc} } );
+    local @INC = ( @{ $self->{option}{inc} }, @INC );
     @queue = ('/') if !@queue;
     while (@queue) {
 
         my $url = URI->new( shift @queue );
         next if $seen->{ $url->path }++;
+        next if $url->scheme && ! eval { $url->host =~ $host_ok };
 
         # get the response
         my $response = $wallflower->get($url);
@@ -124,6 +139,14 @@ sub _process_queue {
             unshift @queue, $l if $l;
         }
     }
+}
+
+sub _host_regexp {
+    my ($self) = @_;
+    my $re = join '|',
+        map { s/\./\\./g; s/\*/.*/g; $_ }
+        @{ $self->{option}{host} };
+    return qr{^(?:$re)$};
 }
 
 1;
