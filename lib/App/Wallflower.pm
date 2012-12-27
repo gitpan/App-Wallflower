@@ -151,11 +151,20 @@ sub _host_regexp {
 
 1;
 
+# ABSTRACT: Class performing the moves for the wallflower program
+
+
+
 __END__
+=pod
 
 =head1 NAME
 
 App::Wallflower - Class performing the moves for the wallflower program
+
+=head1 VERSION
+
+version 1.003
 
 =head1 SYNOPSIS
 
@@ -182,21 +191,18 @@ See L<wallflower> for the list of options and their usage.
 Make L<wallflower> dance.
 
 Process the remaining arguments according to the options,
-i.e. either consider them as URL to save, or as files
-containing URL to save.
+i.e. either as URLs to save or as files containing lists of URLs to save.
 
 =head1 AUTHOR
 
-Philippe Bruhat (BooK)
+Philippe Bruhat (BooK) <book@cpan.org>
 
-=head1 COPYRIGHT
+=head1 COPYRIGHT AND LICENSE
 
-Copyright 2010-2012 Philippe Bruhat (BooK), all rights reserved.
+This software is copyright (c) 2012 by Philippe Bruhat (BooK).
 
-=head1 LICENSE
-
-This program is free software and is published under the same
-terms as Perl itself.
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
 
 =cut
 

@@ -59,11 +59,20 @@ sub _links_from_css {
 
 1;
 
+# ABSTRACT: Utility functions for Wallflower
+
+
+
 __END__
+=pod
 
 =head1 NAME
 
 Wallflower::Util - Utility functions for Wallflower
+
+=head1 VERSION
+
+version 1.003
 
 =head1 SYNOPSIS
 
@@ -79,7 +88,7 @@ Wallflower::Util - Utility functions for Wallflower
 
 =head1 DESCRIPTION
 
-This modules provides methods to extract links from the files
+This module provides methods to extract links from the files
 produced by L<Wallflower>'s C<get()> method.
 
 =head1 FUNCTIONS
@@ -89,21 +98,19 @@ produced by L<Wallflower>'s C<get()> method.
 Returns all links found in the response body, depending on its content type.
 
 C<$response> is the array reference returned by L<Wallflower>'s C<get()>
-method. C<$url> is the base URI for resolving relative links, i.e. the
+method. C<$url> is the base URL for resolving relative links, i.e. the
 original argument to C<get()>.
 
 =head1 AUTHOR
 
-Philippe Bruhat (BooK)
+Philippe Bruhat (BooK) <book@cpan.org>
 
-=head1 COPYRIGHT
+=head1 COPYRIGHT AND LICENSE
 
-Copyright 2012 Philippe Bruhat (BooK), all rights reserved.
+This software is copyright (c) 2012 by Philippe Bruhat (BooK).
 
-=head1 LICENSE
-
-This program is free software and is published under the same
-terms as Perl itself.
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
 
 =cut
 
