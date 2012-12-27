@@ -1,4 +1,7 @@
 package Wallflower;
+{
+  $Wallflower::VERSION = '1.004';
+}
 
 use strict;
 use warnings;
@@ -8,8 +11,6 @@ use Path::Class;
 use URI;
 use HTTP::Date qw( time2str );
 use Carp;
-
-our $VERSION = '1.002';
 
 # quick getters
 for my $attr (qw( application destination env index )) {
@@ -157,7 +158,7 @@ Wallflower - Stick Plack applications to the wallpaper
 
 =head1 VERSION
 
-version 1.003
+version 1.004
 
 =head1 SYNOPSIS
 

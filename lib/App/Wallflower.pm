@@ -1,4 +1,7 @@
 package App::Wallflower;
+{
+  $App::Wallflower::VERSION = '1.004';
+}
 
 use strict;
 use warnings;
@@ -164,7 +167,7 @@ App::Wallflower - Class performing the moves for the wallflower program
 
 =head1 VERSION
 
-version 1.003
+version 1.004
 
 =head1 SYNOPSIS
 
